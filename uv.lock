@@ -1,0 +1,19 @@
+version = 1
+revision = 3
+requires-python = ">=3.13"
+
+[manifest]
+members = [
+    "cross-view-fusion",
+    "dataset-creation",
+]
+
+[[package]]
+name = "cross-view-fusion"
+version = "0.1.0"
+source = { editable = "." }
+
+[[package]]
+name = "dataset-creation"
+version = "0.1.0"
+source = { editable = "dataset-creation" }
