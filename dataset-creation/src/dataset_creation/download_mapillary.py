@@ -67,7 +67,7 @@ def download_images(
         except Exception:
             return False, False
 
-    with httpx.Client(timeout=30) as client:
+    with httpx.Client(timeout=30) as _:
         with tqdm(total=len(images), desc="Downloading images", unit="img") as pbar:
             for image in images:
                 success, skipped_flag = download_single(image)
