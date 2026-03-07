@@ -9,15 +9,16 @@ from tqdm import tqdm
 
 DEFAULT_RESOLUTION = 1024
 RESOLUTION_CHOICES = [256, 1024, 2048]
+DEFAULT_DOTENV_PATH = Path(__file__).parent.parent.parent.parent / ".env"
 
 
 def load_geojson(path: Path) -> dict:
-    with open(path) as f:
+    with open(path, mode="r") as f:
         return json.load(f)
 
 
-def get_mapillary_token() -> str:
-    dotenv.load_dotenv()
+def get_mapillary_token(dotenv_path: Path) -> str:
+    dotenv.load_dotenv(dotenv_path)
     token = os.getenv("MAPILLARY_TOKEN")
     if not token:
         raise ValueError("MAPILLARY_TOKEN not found in environment or .env file")
@@ -25,7 +26,7 @@ def get_mapillary_token() -> str:
 
 
 def download_images(
-    images: list[dict],
+    images: dict,
     output_dir: Path,
     resolution: int,
     max_workers: int = 10,
@@ -39,7 +40,7 @@ def download_images(
     skipped = 0
 
     def download_single(image: dict) -> tuple[bool, bool]:
-        image_id = str(image["id"])
+        image_id = str(image.get("properties", {}).get("id", "false"))
         image_path = images_dir / f"{image_id}.jpg"
         metadata_path = metadata_dir / f"{image_id}.json"
 
@@ -68,8 +69,8 @@ def download_images(
             return False, False
 
     with httpx.Client(timeout=30) as _:
-        with tqdm(total=len(images), desc="Downloading images", unit="img") as pbar:
-            for image in images:
+        with tqdm(total=len(images["features"][:5]), desc="Downloading images", unit="img") as pbar:
+            for image in images["features"][:5]:
                 success, skipped_flag = download_single(image)
                 if success:
                     downloaded += 1

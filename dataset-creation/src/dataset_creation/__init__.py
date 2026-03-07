@@ -1,8 +1,12 @@
-import typer
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
+
+import mapillary.interface as mly
+import mapillary.models.geojson as geojson_module
+import typer
 
 from dataset_creation.download_mapillary import (
+    DEFAULT_DOTENV_PATH,
     DEFAULT_RESOLUTION,
     RESOLUTION_CHOICES,
     download_images,
@@ -10,7 +14,17 @@ from dataset_creation.download_mapillary import (
     load_geojson,
 )
 
-app = typer.Typer(help="Download Mapillary street view images for dataset creation")
+
+def append_feature_without_deduplication(self, feature_inputs: dict) -> None:
+    from mapillary.models.geojson import Feature
+
+    feature = Feature(feature=feature_inputs)
+    self.features.append(feature)
+
+
+# Needed for performance
+geojson_module.GeoJSON.append_feature = append_feature_without_deduplication  # type: ignore
+
 
 ImageDir = Annotated[
     Path,
@@ -22,12 +36,24 @@ GeojsonPath = Annotated[
     typer.Argument(help="Path to GeoJSON file defining the download area"),
 ]
 
+DotenvPath = Annotated[
+    Path,
+    typer.Option(
+        help="Path to the .env (dotenv) file with you mapillary token, named MAPILLARY_TOKEN, defaults to the cross-view-fusion dir"
+    ),
+]
+
+app = typer.Typer(help="Download Mapillary street view images for dataset creation")
+
 
 @app.command()
 def download(
     geojson: GeojsonPath,
     output: ImageDir,
-    resolution: Annotated[int, typer.Option("--resolution", "-r")] = DEFAULT_RESOLUTION,
+    resolution: Annotated[
+        Literal[256, 1024, 2048], typer.Option("--resolution", "-r")
+    ] = DEFAULT_RESOLUTION,
+    dotenv_path: DotenvPath = DEFAULT_DOTENV_PATH,
 ) -> None:
     """Download Mapillary images within a GeoJSON boundary."""
     if resolution not in RESOLUTION_CHOICES:
@@ -38,8 +64,7 @@ def download(
         typer.echo(f"Error: GeoJSON file not found: {geojson}", err=True)
         raise typer.Exit(code=1)
 
-    token = get_mapillary_token()
-    import mapillary.interface as mly
+    token = get_mapillary_token(dotenv_path)
 
     mly.set_access_token(token)
 
@@ -47,21 +72,19 @@ def download(
     geojson_data = load_geojson(geojson)
 
     typer.echo("Querying Mapillary for images in area...")
-    images_data = mly.images_in_geojson(geojson_data)
-    images = list(images_data)
 
-    if not images:
+    image_data = mly.images_in_shape(geojson_data, image_type="pano")
+
+    if not image_data:
         typer.echo("No images found in the specified area.")
         raise typer.Exit(code=0)
 
-    typer.echo(f"Found {len(images)} images. Starting download...")
+    typer.echo(f"Found {len(image_data.features)} images. Starting download...")
 
-    downloaded, skipped = download_images(images, output, resolution)
+    downloaded, skipped = download_images(image_data.to_dict(), output, resolution)
 
-    typer.echo(
-        f"Download complete: {downloaded} new, {skipped} skipped (already exists)"
-    )
+    typer.echo(f"Download complete: {downloaded} new, {skipped} skipped (already exists)")
 
 
-def main() -> None:
+def main():
     app()
