@@ -1,11 +1,12 @@
 from pathlib import Path
 from typing import Annotated, Any, Generator, Literal
 
-import mapillary.interface as mly
-import mapillary.models.geojson as geojson_module
-import mercantile
 import typer
 
+# import mapillary.interface as mly
+# import mapillary.models.geojson as geojson_module
+# import mercantile
+import dataset_creation.street_view.mapillary_api as api
 from dataset_creation.download_mapillary import (
     DEFAULT_DOTENV_PATH,
     DEFAULT_RESOLUTION,
@@ -15,16 +16,15 @@ from dataset_creation.download_mapillary import (
     load_geojson,
 )
 
+# def append_feature_without_deduplication(self, feature_inputs: dict) -> None:
+#     from mapillary.models.geojson import Feature
 
-def append_feature_without_deduplication(self, feature_inputs: dict) -> None:
-    from mapillary.models.geojson import Feature
-
-    feature = Feature(feature=feature_inputs)
-    self.features.append(feature)
+#     feature = Feature(feature=feature_inputs)
+#     self.features.append(feature)
 
 
 # Needed for performance
-geojson_module.GeoJSON.append_feature = append_feature_without_deduplication  # type: ignore
+# geojson_module.GeoJSON.append_feature = append_feature_without_deduplication  # type: ignore
 
 
 ImageDir = Annotated[
@@ -67,14 +67,14 @@ def download(
 
     token = get_mapillary_token(dotenv_path)
 
-    mly.set_access_token(token)
+    api.set_token(token)
 
     typer.echo(f"Loading GeoJSON from: {geojson}")
     geojson_data = load_geojson(geojson)
 
     typer.echo("Querying Mapillary for images in area...")
 
-    image_data = mly.images_in_shape(geojson_data, image_type="pano", zoom=14)
+    image_data = api.images_in_shape(geojson_data, image_type="pano", is_computed=True)
 
     if not image_data:
         typer.echo("No images found in the specified area.")

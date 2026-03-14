@@ -7,7 +7,9 @@ authors = [
     { name = "Anton Holmberg", email = "anton.holmberg@live.com" }
 ]
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "pillow>=12.1.1",
+]
 
 [project.scripts]
 cross-view-fusion = "cross_view_fusion:main"

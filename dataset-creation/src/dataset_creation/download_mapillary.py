@@ -1,11 +1,13 @@
+import asyncio
 import json
 import os
 from pathlib import Path
 
 import dotenv
 import httpx
-import mapillary.interface as mly
-from tqdm import tqdm
+from tqdm.asyncio import tqdm as async_tqdm
+
+import dataset_creation.street_view.mapillary_api as api
 
 DEFAULT_RESOLUTION = 1024
 RESOLUTION_CHOICES = [256, 1024, 2048]
@@ -29,7 +31,7 @@ def download_images(
     images: dict,
     output_dir: Path,
     resolution: int,
-    max_workers: int = 10,
+    max_semaphores: int = 10,
 ) -> tuple[int, int]:
     images_dir = output_dir / "images"
     metadata_dir = output_dir / "metadata"
@@ -38,44 +40,32 @@ def download_images(
 
     downloaded = 0
     skipped = 0
-
-    def download_single(image: dict) -> tuple[bool, bool]:
-        image_id = str(image.get("properties", {}).get("id", "false"))
-        image_path = images_dir / f"{image_id}.jpg"
-        metadata_path = metadata_dir / f"{image_id}.json"
-
-        if image_path.exists():
-            return False, True
-
-        thumb_url = mly.image_thumbnail(image_id=image_id, resolution=resolution)
-        if not thumb_url:
-            return False, False
-
-        try:
-            response = httpx.get(thumb_url, timeout=30)
-            response.raise_for_status()
-            image_path.write_bytes(response.content)
-
-            metadata = {
-                "id": image_id,
-                "thumb_url": thumb_url,
-                "resolution": resolution,
-            }
-            metadata.update(image.get("properties", {}))
-            metadata_path.write_text(json.dumps(metadata, indent=2))
-
-            return True, False
-        except Exception:
-            return False, False
-
-    with httpx.Client(timeout=30) as _:
-        with tqdm(total=len(images["features"][:5]), desc="Downloading images", unit="img") as pbar:
-            for image in images["features"][:5]:
-                success, skipped_flag = download_single(image)
-                if success:
-                    downloaded += 1
-                elif skipped_flag:
-                    skipped += 1
-                pbar.update(1)
+    results = asyncio.run(
+        download_all(images["features"], images_dir, metadata_dir, resolution, max_semaphores)
+    )
+    for success, skipped_flag in results:
+        if success:
+            downloaded += 1
+        elif skipped_flag:
+            skipped += 1
 
     return downloaded, skipped
+
+
+async def download_all(
+    images, images_dir, metadata_dir, resolution, max_semaphores
+) -> list[tuple[bool, bool]]:
+    sem = asyncio.Semaphore(max_semaphores)
+    async with httpx.AsyncClient() as client:
+        results = await async_tqdm.gather(
+            *[
+                api.MapillaryClient.download_image(
+                    client, image, images_dir, metadata_dir, resolution, sem
+                )
+                for image in images
+            ],
+            total=len(images),
+            desc="Downloading images",
+            unit="img",
+        )
+    return results

@@ -1,7 +1,9 @@
 import asyncio
+import json
 import logging
 from dataclasses import dataclass
-from typing import Literal
+from pathlib import Path
+from typing import Any, Literal
 
 import httpx
 import mercantile
@@ -67,13 +69,48 @@ class MapillaryClient:
                 res_content["error"]["fbtrace_id"],
             )
 
-    @classmethod
-    def get_image_url(cls, image_id: str) -> str:
-        url = "https://graph.mapillary.com/{}?fields=thumb_2048_url".format(image_id)
-        header = {"Authorization": f"OAuth {cls.__access_token}"}
-        r = httpx.get(url, headers=header)
+    @staticmethod
+    async def download_image(
+        client: httpx.AsyncClient,
+        image_meta: dict[str, Any],
+        images_dir: Path,
+        metadata_dir: Path,
+        resolution: int,
+        sem: asyncio.Semaphore,
+    ) -> tuple[bool, bool]:
+        image_id = str(image_meta.get("properties", {}).get("id", "false"))
+        image_path = images_dir / f"{image_id}.jpg"
+        metadata_path = metadata_dir / f"{image_id}.json"
+
+        if image_path.exists():
+            return False, True
+        url = f"https://graph.mapillary.com/{image_id}?fields=thumb_2048_url"
+        header = {"Authorization": f"OAuth {MapillaryClient.__access_token}"}
+        async with sem:
+            r = await client.get(url, headers=header)
         data = r.json()
-        return data["thumb_2048_url"]
+        thumb_url = data["thumb_2048_url"]
+
+        if not thumb_url:
+            return False, False
+
+        try:
+            async with sem:
+                response = await client.get(thumb_url, timeout=30)
+            response.raise_for_status()
+            image_path.write_bytes(response.content)
+
+            metadata = {
+                "id": image_id,
+                "thumb_url": thumb_url,
+                "resolution": resolution,
+            }
+            metadata.update(image_meta.get("properties", {}))
+            metadata_path.write_text(json.dumps(metadata, indent=2))
+
+            return True, False
+        except Exception:
+            return False, False
 
     @classmethod
     def set_token(cls, access_token: str) -> None:
@@ -229,14 +266,12 @@ def fetch_image_layers(
             zooms=ZOOM,
         )
     )
-    print(len(tiles))
 
     logger.info(
         f"[Vector Tiles API] Fetching {len(tiles)} {'tiles' if len(tiles) > 1 else 'tile'}"
         "for images ..."
     )
     results = asyncio.run(fetch_all(tiles, is_computed, LAYER, ZOOM))
-    print(results)
     for result in results:
         for feature in result["features"]:
             point = shapely.geometry.shape(feature["geometry"])
@@ -262,7 +297,6 @@ async def fetch_tile(client, tile, is_computed, layer, zoom, sem):
         url = VectorTiles.get_image_layer_url(x=tile[0], y=tile[1], z=zoom)
     async with sem:
         response = await client.get(url)
-    print(response.status_code, len(response.content), url)
 
     return vt_bytes_to_geojson(
         b_content=response.content,
@@ -274,7 +308,7 @@ async def fetch_tile(client, tile, is_computed, layer, zoom, sem):
 
 
 async def fetch_all(tiles, is_computed, layer, zoom):
-    sem = asyncio.Semaphore(4)
+    sem = asyncio.Semaphore(10)
     async with MapillaryClient() as client:
         results = await asyncio.gather(
             *[fetch_tile(client, tile, is_computed, layer, zoom, sem) for tile in tiles],
