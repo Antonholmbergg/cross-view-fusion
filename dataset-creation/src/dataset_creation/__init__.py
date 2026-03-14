@@ -74,9 +74,7 @@ def download(
 
     typer.echo("Querying Mapillary for images in area...")
 
-    tiles = get_tiles_in_geojson(geojson_data)
-
-    image_data = mly.images_in_shape(geojson_data, image_type="pano", zoom=15)
+    image_data = mly.images_in_shape(geojson_data, image_type="pano", zoom=14)
 
     if not image_data:
         typer.echo("No images found in the specified area.")
@@ -89,25 +87,25 @@ def download(
     typer.echo(f"Download complete: {downloaded} new, {skipped} skipped (already exists)")
 
 
-def get_tiles_in_geojson(geojson_data: dict) -> Generator[mercantile.Tile, Any, None]:
-    coords = geojson_data["features"][0]["geometry"]["coordinates"][0]
-    west = 180
-    south = 90
-    east = -180
-    north = -90
+# def get_tiles_in_geojson(geojson_data: dict) -> Generator[mercantile.Tile, Any, None]:
+#     coords = geojson_data["features"][0]["geometry"]["coordinates"][0]
+#     west = 180
+#     south = 90
+#     east = -180
+#     north = -90
 
-    for coord in coords:
-        if coord[0] < west:
-            west = coord[0]
-        elif coord[0] > east:
-            east = coord[0]
+#     for coord in coords:
+#         if coord[0] < west:
+#             west = coord[0]
+#         elif coord[0] > east:
+#             east = coord[0]
 
-        if coord[1] < south:
-            south = coord[1]
-        elif coord[1] > north:
-            north = coord[1]
-    print(west, south, east, north)
-    return mercantile.tiles(west, south, east, north, zooms=14)
+#         if coord[1] < south:
+#             south = coord[1]
+#         elif coord[1] > north:
+#             north = coord[1]
+#     print(west, south, east, north)
+#     return mercantile.tiles(west, south, east, north, zooms=14)
 
 
 def main():
