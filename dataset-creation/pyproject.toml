@@ -17,6 +17,8 @@ dependencies = [
     "vt2geojson>=0.2.1",
     "mercantile>=1.2.1",
     "pydantic>=2.12.5",
+    "rasterio>=1.5.0",
+    "pyproj>=3.7.2",
 ]
 
 #[project.scripts]
